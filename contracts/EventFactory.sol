@@ -20,6 +20,7 @@ library FactoryStructs {
 
 contract EventFactory {
     using EnumerableSet for EnumerableSet.AddressSet;
+    using EnumerableSet for EnumerableSet.UintSet;
 
     uint256 public constant VALIDATION_TIMEOUT = 60;
     string public constant UNAUTHORIZED = "019001";
@@ -36,7 +37,7 @@ contract EventFactory {
     mapping(uint160 => address) public eventToOwner;
     mapping(uint160 => bool) public eventToStatus;
     mapping(uint160 => EnumerableSet.AddressSet) private _eventToStampers;
-    mapping(address => uint160[]) private ownerToEvent;
+    mapping(address => EnumerableSet.UintSet) private _ownerToEvent;
 
     uint256 public currentEventCount;
 
@@ -63,9 +64,33 @@ contract EventFactory {
         require (eventToOwner[uid] == address(0), INITIALIZATION_ERROR);
         eventToMetadata[uid] = _metadata;
         eventToOwner[uid] = msg.sender;
-        ownerToEvent[msg.sender].push(uid);
+        _ownerToEvent[msg.sender].add(uid);
         emit EventCreate(msg.sender, uid);
         currentEventCount++;
+    }
+
+    function getTotalEventsOfOwner(address owner) external view returns(uint256) {
+        return _ownerToEvent[owner].length();
+    }
+
+    function getEventsOfOwnerByIndex(address owner, uint256 index) external view returns(uint160) {
+        return uint160(_ownerToEvent[owner].at(index));
+    }
+
+    function getTotalTicketsOfEvent(uint160 eventId) external view returns(uint256) {
+        return _eventToTicket[eventId].length();
+    }
+
+    function getTicketsOfEventByIndex(uint160 eventId, uint256 index) external view returns(address) {
+        return _eventToTicket[eventId].at(index);
+    }
+
+    function getTotalStampersOfEvent(uint160 eventId) external view returns(uint256) {
+        return _eventToStampers[eventId].length();
+    }
+
+    function getStampersOfEventByIndex(uint160 eventId, uint256 index) external view returns(address) {
+        return _eventToStampers[eventId].at(index);
     }
 
     /**
@@ -74,8 +99,10 @@ contract EventFactory {
     */
     function transferOwnership(uint160 eventId, address _newOwner) external onlyEventOwner(eventId) {
         require(_newOwner != address(0), CANNOT_TRANSFER_TO_ZERO_ADDRESS);
-        emit OwnershipTransferred(msg.sender, _newOwner);
+        _ownerToEvent[msg.sender].remove(eventId);
         eventToOwner[eventId] = _newOwner;
+        _ownerToEvent[_newOwner].add(eventId);
+        emit OwnershipTransferred(msg.sender, _newOwner);
     }
 
     function isEventWithdrawable(uint160 eventId) public view returns(bool withdrawable) {
@@ -89,8 +116,8 @@ contract EventFactory {
 
     /* Ticket minting and transfer */
 
-    function createTicket(uint160 eventId, FactoryStructs.TicketMetadata calldata _ticketMetadata) external onlyEventOwner(eventId)  {
-        Ticket t = new Ticket(this, eventId, _ticketMetadata);
+    function createTicket(uint160 eventId, string calldata uri, FactoryStructs.TicketMetadata calldata _ticketMetadata) external onlyEventOwner(eventId)  {
+        Ticket t = new Ticket(this, eventId, uri, _ticketMetadata);
         _eventToTicket[eventId].add(address(t));
         emit TicketCreate(msg.sender, eventId, t);
     }
@@ -169,7 +196,7 @@ contract Ticket is TNT721 {
 
     FactoryStructs.TicketMetadata public metadata;
 
-    uint160 private eventId;
+    uint160 public eventId;
 
     mapping(uint256 => bool) public tokenToStamped;
 
@@ -177,10 +204,11 @@ contract Ticket is TNT721 {
     event TicketStamped(uint256 indexed ticketId);
     event WithdrawBalance();
 
-    constructor(EventFactory _factory, uint160 _eventId, FactoryStructs.TicketMetadata memory _ticketMetadata) TNT721("TKETS NFT", "TKET") {
+    constructor(EventFactory _factory, uint160 _eventId, string memory uri, FactoryStructs.TicketMetadata memory _ticketMetadata) TNT721("TKETS NFT", "TKET") {
         metadata = _ticketMetadata;
         eventId = _eventId;
         factory = _factory;
+        _setBaseURI(uri);
     }
     
     function mintTicket(uint256 numberOfTickets) external payable {
@@ -191,7 +219,7 @@ contract Ticket is TNT721 {
         require(block.timestamp > metadata.ticketStartTime && block.timestamp < metadata.ticketEndTime, TICKET_SALE_ERROR);
         uint256 currentTicketCount = totalSupply();
         uint256 endTicketCount = SafeMath.add(currentTicketCount, numberOfTickets);
-        require(endTicketCount <= metadata.maxTickets, TICKET_SALE_ERROR);
+        require(metadata.maxTickets == 0 || endTicketCount <= metadata.maxTickets, TICKET_SALE_ERROR);
 
         bool newHolder = balanceOf(msg.sender) == 0;
         for (uint256 i = 0; i < numberOfTickets; i++) {

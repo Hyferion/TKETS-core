@@ -34,6 +34,7 @@ var testTicketStruct2;
 
 contract('EventFactory', (accounts) => {
 
+  const uri = "https://www.testimguri.com/asdasd.png"
   let owner       = accounts[0];
   let nonOwner    = accounts[1];
   var eventId;
@@ -41,6 +42,7 @@ contract('EventFactory', (accounts) => {
 
   it('creating an event should emit EventCreate event and return metadata correctly', async () => {
     const eventFactoryInstance = await EventFactory.deployed();
+    console.log("    INFO: EventFactory instance address: " + eventFactoryInstance.address);
 
     const currentTimestamp = await getCurrentBlockTimestamp();
 
@@ -53,6 +55,8 @@ contract('EventFactory', (accounts) => {
     assert.equal(tx.logs.length, 1, "No EventCreate event emitted!");
 
     eventId = tx.logs[0].args.eventId.valueOf();
+
+    console.log("    INFO: EventId: " + eventId.toString(16));
 
     const eventMetadata = await eventFactoryInstance.eventToMetadata(eventId);
 
@@ -69,7 +73,7 @@ contract('EventFactory', (accounts) => {
     const currentTimestampForTestStruct = await getCurrentBlockTimestamp();
     testTicketStruct = [10, 100000, currentTimestampForTestStruct, currentTimestampForTestStruct + 1000000, false];
 
-    const tx2 = await eventFactoryInstance.createTicket(eventId, testTicketStruct, {from: owner});
+    const tx2 = await eventFactoryInstance.createTicket(eventId, uri, testTicketStruct, {from: owner});
 
     console.log("    INFO: Gas used for ticket creation: " + tx2.receipt.gasUsed);
 
@@ -79,6 +83,8 @@ contract('EventFactory', (accounts) => {
     tx2.logs[0].args.eventId.valueOf().should.be.a.bignumber.that.equals(eventId);
 
     ticketAddress = tx2.logs[0].args.ticketAddress.valueOf();
+
+    console.log("    INFO: Ticket instance address: " + ticketAddress);
 
     const ticketGAInstance = await Ticket.at(ticketAddress);
     const ticketMetadata = await ticketGAInstance.metadata();
@@ -94,7 +100,7 @@ contract('EventFactory', (accounts) => {
     const currentTimestampForTestStruct = await getCurrentBlockTimestamp();
     testTicketStruct2 = [10, 5000000, currentTimestampForTestStruct, currentTimestampForTestStruct + 1000000, false];
 
-    await truffleAssert.reverts(eventFactoryInstance.createTicket(eventId, testTicketStruct2, {from: nonOwner}));
+    await truffleAssert.reverts(eventFactoryInstance.createTicket(eventId, uri, testTicketStruct2, {from: nonOwner}));
   });
 
   var ticketMintedIdStart;
@@ -113,7 +119,7 @@ contract('EventFactory', (accounts) => {
 
     assert.equal(tx4.logs.length, numTicketsMinted + 1, "No TicketMint event emitted!");
     ticketMintedIdStart = tx4.logs[numTicketsMinted].args.ticketStartId.valueOf();
-    console.log("    INFO: Gas used for ticket mint: " + tx4.receipt.gasUsed);
+    console.log("    INFO: Gas used for minting 7 tickets: " + tx4.receipt.gasUsed);
 
     const gasUsedBN = new BN(tx4.receipt.gasUsed);
     const txRaw = await web3.eth.getTransaction(tx4.tx);
@@ -167,7 +173,7 @@ contract('EventFactory', (accounts) => {
     const currentTimestamp = await getCurrentBlockTimestamp();
 
     const testTicketTimeslot = [10, 100000, currentTimestamp + 15, currentTimestamp + 30, false];
-    const ticketMintTx = await eventFactoryInstance.createTicket(eventId, testTicketTimeslot, {from: owner});
+    const ticketMintTx = await eventFactoryInstance.createTicket(eventId, uri, testTicketTimeslot, {from: owner});
     const ticketTimeslotAddress = ticketMintTx.logs[0].args.ticketAddress.valueOf();
     const ticketTSInstance = await Ticket.at(ticketTimeslotAddress);
 
@@ -360,7 +366,7 @@ contract('EventFactory', (accounts) => {
 
     const withdrawEventId = tx.logs[0].args.eventId.valueOf();
     const withdrawTicketStruct = [10, new BN("3000000000000000000"), currentTimestamp, currentTimestamp + 1000000, false];
-    const tx2 = await eventFactoryInstance.createTicket(withdrawEventId, withdrawTicketStruct, {from: owner});
+    const tx2 = await eventFactoryInstance.createTicket(withdrawEventId, uri, withdrawTicketStruct, {from: owner});
     assert.equal(tx2.logs.length, 1, "No TicketCreate event emitted!");
 
     const withdrawTicketAddress = tx2.logs[0].args.ticketAddress.valueOf();
@@ -402,7 +408,7 @@ contract('EventFactory', (accounts) => {
 
     const withdrawEventId = tx.logs[0].args.eventId.valueOf();
     const withdrawTicketStruct = [10, 100000, currentTimestamp, currentTimestamp + 1000000, false];
-    const tx2 = await eventFactoryInstance.createTicket(withdrawEventId, withdrawTicketStruct, {from: owner});
+    const tx2 = await eventFactoryInstance.createTicket(withdrawEventId, uri, withdrawTicketStruct, {from: owner});
     assert.equal(tx2.logs.length, 1, "No TicketCreate event emitted!");
 
     const withdrawTicketAddress = tx2.logs[0].args.ticketAddress.valueOf();
@@ -431,7 +437,7 @@ contract('EventFactory', (accounts) => {
 
     const cancelledEventId = tx.logs[0].args.eventId.valueOf();
     const cancelledTicketStruct = [100, new BN("3000000000000000000"), currentTimestamp, currentTimestamp + 1000000, false];
-    const tx2 = await eventFactoryInstance.createTicket(cancelledEventId, cancelledTicketStruct, {from: owner});
+    const tx2 = await eventFactoryInstance.createTicket(cancelledEventId, uri, cancelledTicketStruct, {from: owner});
     assert.equal(tx2.logs.length, 1, "No TicketCreate event emitted!");
 
     const cancelledTicketAddress = tx2.logs[0].args.ticketAddress.valueOf();
@@ -502,7 +508,7 @@ contract('EventFactory', (accounts) => {
     const cancelledEventId = tx.logs[0].args.eventId.valueOf();
     const cancelledTicketStruct = [10, new BN("3000000000000000000"), currentTimestamp, currentTimestamp + 1000000, false];
 
-    const tx2 = await eventFactoryInstance.createTicket(cancelledEventId, cancelledTicketStruct, {from: owner});
+    const tx2 = await eventFactoryInstance.createTicket(cancelledEventId, uri, cancelledTicketStruct, {from: owner});
     assert.equal(tx2.logs.length, 1, "No TicketCreate event emitted!");
 
     const cancelledTicketAddress = tx2.logs[0].args.ticketAddress.valueOf();
