@@ -35,6 +35,7 @@ var testTicketStruct2;
 contract('EventFactory', (accounts) => {
 
   const uri = "https://www.testimguri.com/asdasd.png"
+  const uriHash = '0x81da7abb5c9c7515f57dab2fc946f01217ab52f3bd8958bc36bd55894451a93c'
   let owner       = accounts[0];
   let nonOwner    = accounts[1];
   var eventId;
@@ -71,9 +72,9 @@ contract('EventFactory', (accounts) => {
     const eventFactoryInstance = await EventFactory.deployed();
 
     const currentTimestampForTestStruct = await getCurrentBlockTimestamp();
-    testTicketStruct = [10, 100000, currentTimestampForTestStruct, currentTimestampForTestStruct + 1000000, false];
+    testTicketStruct = [10, new BN('10000000000000000000'), currentTimestampForTestStruct, currentTimestampForTestStruct + 1000000, false];
 
-    const tx2 = await eventFactoryInstance.createTicket(eventId, uri, testTicketStruct, {from: owner});
+    const tx2 = await eventFactoryInstance.createTicket(eventId, uri, uriHash, testTicketStruct, {from: owner});
 
     console.log("    INFO: Gas used for ticket creation: " + tx2.receipt.gasUsed);
 
@@ -90,7 +91,11 @@ contract('EventFactory', (accounts) => {
     const ticketMetadata = await ticketGAInstance.metadata();
 
     for (let i = 0; i < testTicketStruct.length; i++) {
-      assert.equal(ticketMetadata[i], testTicketStruct[i], "Wrong ticket metadata saved to blockchain!");
+      if (i < testTicketStruct.length - 1) {
+        assert.equal(ticketMetadata[i].toString(), testTicketStruct[i].toString(), "Wrong ticket metadata saved to blockchain!");
+      } else {
+        assert.equal(ticketMetadata[i], testTicketStruct[i], "Wrong ticket metadata saved to blockchain!");
+      }
     }
   });
 
@@ -98,9 +103,9 @@ contract('EventFactory', (accounts) => {
     const eventFactoryInstance = await EventFactory.deployed();
 
     const currentTimestampForTestStruct = await getCurrentBlockTimestamp();
-    testTicketStruct2 = [10, 5000000, currentTimestampForTestStruct, currentTimestampForTestStruct + 1000000, false];
+    testTicketStruct2 = [10, new BN('10000000000000000000'), currentTimestampForTestStruct, currentTimestampForTestStruct + 1000000, false];
 
-    await truffleAssert.reverts(eventFactoryInstance.createTicket(eventId, uri, testTicketStruct2, {from: nonOwner}));
+    await truffleAssert.reverts(eventFactoryInstance.createTicket(eventId, uri, uriHash, testTicketStruct2, {from: nonOwner}));
   });
 
   var ticketMintedIdStart;
@@ -115,17 +120,20 @@ contract('EventFactory', (accounts) => {
     const ticketPurchaserStartingTickets = (await ticketGAInstance.balanceOf.call(nonOwner)).toNumber();
     const ticketContractStartingBalance = parseInt(await web3.eth.getBalance(ticketAddress));
     
-    const tx4 = await ticketGAInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: numTicketsMinted * testTicketStruct[1]});
+    // const gasEstimate = await ticketGAInstance.mintTicket.estimateGas(numTicketsMinted, {from: nonOwner, value: testTicketStruct[1].mul(new BN(numTicketsMinted))});
+    // console.log("    INFO: Gas estimate for minting 7 tickets: " + gasEstimate.toString())
 
-    assert.equal(tx4.logs.length, numTicketsMinted + 1, "No TicketMint event emitted!");
-    ticketMintedIdStart = tx4.logs[numTicketsMinted].args.ticketStartId.valueOf();
+    const tx4 = await ticketGAInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: testTicketStruct[1].mul(new BN(numTicketsMinted))});
+
+    assert.equal(tx4.logs.length, numTicketsMinted * 2, "No TicketMint event emitted!");
+    ticketMintedIdStart = tx4.logs[numTicketsMinted].args.ticketId.valueOf();
     console.log("    INFO: Gas used for minting 7 tickets: " + tx4.receipt.gasUsed);
 
     const gasUsedBN = new BN(tx4.receipt.gasUsed);
     const txRaw = await web3.eth.getTransaction(tx4.tx);
     const gasPriceBN = new BN(txRaw.gasPrice);
     const transactionFee = gasPriceBN.mul(gasUsedBN);
-    const ticketCosts = new BN(numTicketsMinted * testTicketStruct[1]);
+    const ticketCosts = testTicketStruct[1].mul(new BN(numTicketsMinted));
     const diffBalance = transactionFee.add(ticketCosts);
 
     let ticketPurchaserEndingBalance = await web3.eth.getBalance(nonOwner);
@@ -139,8 +147,8 @@ contract('EventFactory', (accounts) => {
     const ticketContractEndingBalance = parseInt(await web3.eth.getBalance(ticketAddress));
     assert.equal(numTicketsMinted * testTicketStruct[1], ticketContractEndingBalance - ticketContractStartingBalance, "Wrong balance sent to Ticket smart contract!");
 
-    let nonOwnerTotalTickets = await eventFactoryInstance.getTotalTicketsOfSender({from: nonOwner});
-    assert.equal(nonOwnerTotalTickets, 1);
+    // let nonOwnerTotalTickets = await eventFactoryInstance.getTotalTicketsOfSender({from: nonOwner});
+    // assert.equal(nonOwnerTotalTickets, 1);
   });
 
   it('minting a ticket with incorrect funds should revert', async () => {
@@ -148,8 +156,8 @@ contract('EventFactory', (accounts) => {
 
     const ticketPurchaserStartingTickets = (await ticketGAInstance.balanceOf.call(nonOwner)).toNumber();
     
-    await truffleAssert.reverts(ticketGAInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: (numTicketsMinted - 1) * testTicketStruct[1]})); // funds sent for one less ticket than ordered
-    await truffleAssert.reverts(ticketGAInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: (numTicketsMinted + 1) * testTicketStruct[1]})); // funds sent for one more ticket than ordered
+    await truffleAssert.reverts(ticketGAInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: testTicketStruct[1].mul(new BN(numTicketsMinted - 1))})); // funds sent for one less ticket than ordered
+    await truffleAssert.reverts(ticketGAInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: testTicketStruct[1].mul(new BN(numTicketsMinted + 1))})); // funds sent for one more ticket than ordered
 
     const ticketPurchaserEndingTickets = (await ticketGAInstance.balanceOf.call(nonOwner)).toNumber();
 
@@ -161,7 +169,7 @@ contract('EventFactory', (accounts) => {
 
     const ticketPurchaserStartingTickets = (await ticketGAInstance.balanceOf.call(nonOwner)).toNumber();
     
-    await truffleAssert.reverts(ticketGAInstance.mintTicket(numTicketsMinted * 10, {from: nonOwner, value: numTicketsMinted * testTicketStruct[1]})); // funds sent for one less ticket than ordered
+    await truffleAssert.reverts(ticketGAInstance.mintTicket(numTicketsMinted * 10, {from: nonOwner, value: testTicketStruct[1].mul(new BN(numTicketsMinted * 10))})); // funds sent for one less ticket than ordered
 
     const ticketPurchaserEndingTickets = (await ticketGAInstance.balanceOf.call(nonOwner)).toNumber();
 
@@ -173,7 +181,7 @@ contract('EventFactory', (accounts) => {
     const currentTimestamp = await getCurrentBlockTimestamp();
 
     const testTicketTimeslot = [10, 100000, currentTimestamp + 15, currentTimestamp + 30, false];
-    const ticketMintTx = await eventFactoryInstance.createTicket(eventId, uri, testTicketTimeslot, {from: owner});
+    const ticketMintTx = await eventFactoryInstance.createTicket(eventId, uri, uriHash, testTicketTimeslot, {from: owner});
     const ticketTimeslotAddress = ticketMintTx.logs[0].args.ticketAddress.valueOf();
     const ticketTSInstance = await Ticket.at(ticketTimeslotAddress);
 
@@ -201,8 +209,8 @@ contract('EventFactory', (accounts) => {
 
     assert.equal(nonTicketOwnerEndingTickets, nonTicketOwnerStartingTickets + 1, 'Wrong number of tickets transfered to non ticket owner!');
 
-    let ownerTotalTickets = await eventFactoryInstance.getTotalTicketsOfSender({from: owner});
-    assert.equal(ownerTotalTickets, 1);
+    // let ownerTotalTickets = await eventFactoryInstance.getTotalTicketsOfSender({from: owner});
+    // assert.equal(ownerTotalTickets, 1);
   });
 
   it('transferring a ticket should not be allowed for non owners', async () => {
@@ -366,13 +374,13 @@ contract('EventFactory', (accounts) => {
 
     const withdrawEventId = tx.logs[0].args.eventId.valueOf();
     const withdrawTicketStruct = [10, new BN("3000000000000000000"), currentTimestamp, currentTimestamp + 1000000, false];
-    const tx2 = await eventFactoryInstance.createTicket(withdrawEventId, uri, withdrawTicketStruct, {from: owner});
+    const tx2 = await eventFactoryInstance.createTicket(withdrawEventId, uri, uriHash, withdrawTicketStruct, {from: owner});
     assert.equal(tx2.logs.length, 1, "No TicketCreate event emitted!");
 
     const withdrawTicketAddress = tx2.logs[0].args.ticketAddress.valueOf();
     const withdrawTicketInstance = await Ticket.at(withdrawTicketAddress);
     const tx3 = await withdrawTicketInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: withdrawTicketStruct[1].muln(numTicketsMinted)});
-    assert.equal(tx3.logs.length, numTicketsMinted + 1, "No TicketMint event emitted!");
+    assert.equal(tx3.logs.length, numTicketsMinted * 2, "No TicketMint event emitted!");
 
     let ownerStartingBalance = await web3.eth.getBalance(owner);
     const ownerStartingBalanceeBN = new BN(ownerStartingBalance);
@@ -407,14 +415,14 @@ contract('EventFactory', (accounts) => {
     assert.equal(tx.logs.length, 1, "No EventCreate event emitted!");
 
     const withdrawEventId = tx.logs[0].args.eventId.valueOf();
-    const withdrawTicketStruct = [10, 100000, currentTimestamp, currentTimestamp + 1000000, false];
-    const tx2 = await eventFactoryInstance.createTicket(withdrawEventId, uri, withdrawTicketStruct, {from: owner});
+    const withdrawTicketStruct = [10, new BN('100000'), currentTimestamp, currentTimestamp + 1000000, false];
+    const tx2 = await eventFactoryInstance.createTicket(withdrawEventId, uri, uriHash, withdrawTicketStruct, {from: owner});
     assert.equal(tx2.logs.length, 1, "No TicketCreate event emitted!");
 
     const withdrawTicketAddress = tx2.logs[0].args.ticketAddress.valueOf();
     const withdrawTicketInstance = await Ticket.at(withdrawTicketAddress);
-    const tx3 = await withdrawTicketInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: numTicketsMinted * withdrawTicketStruct[1]});
-    assert.equal(tx3.logs.length, numTicketsMinted + 1, "No TicketMint event emitted!");
+    const tx3 = await withdrawTicketInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: withdrawTicketStruct[1].mul(new BN(numTicketsMinted))});
+    assert.equal(tx3.logs.length, numTicketsMinted * 2, "No TicketMint event emitted!");
 
     await truffleAssert.reverts(withdrawTicketInstance.withdrawBalance({from: owner}));
     await timeout(10000);
@@ -437,14 +445,14 @@ contract('EventFactory', (accounts) => {
 
     const cancelledEventId = tx.logs[0].args.eventId.valueOf();
     const cancelledTicketStruct = [100, new BN("3000000000000000000"), currentTimestamp, currentTimestamp + 1000000, false];
-    const tx2 = await eventFactoryInstance.createTicket(cancelledEventId, uri, cancelledTicketStruct, {from: owner});
+    const tx2 = await eventFactoryInstance.createTicket(cancelledEventId, uri, uriHash, cancelledTicketStruct, {from: owner});
     assert.equal(tx2.logs.length, 1, "No TicketCreate event emitted!");
 
     const cancelledTicketAddress = tx2.logs[0].args.ticketAddress.valueOf();
     const cancelledTicketInstance = await Ticket.at(cancelledTicketAddress);
     const tx3 = await cancelledTicketInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: cancelledTicketStruct[1].muln(numTicketsMinted)});
-    assert.equal(tx3.logs.length, numTicketsMinted + 1, "No TicketMint event emitted!");
-    const cancelledTicketMintedIdStart = tx3.logs[numTicketsMinted].args.ticketStartId.valueOf();
+    assert.equal(tx3.logs.length, numTicketsMinted * 2, "No TicketMint event emitted!");
+    const cancelledTicketMintedIdStart = tx3.logs[numTicketsMinted].args.ticketId.valueOf();
 
     let cancelTicketStartingBalance = await web3.eth.getBalance(cancelledTicketAddress);
     const cancelTicketStartingBalanceBN = new BN(cancelTicketStartingBalance);
@@ -458,7 +466,7 @@ contract('EventFactory', (accounts) => {
 
     const tx4 = await cancelledTicketInstance.refundTicket(cancelledTicketMintedIdStart, {from: nonOwner});
     console.log("    INFO: Gas used for refund one ticket: " + tx4.receipt.gasUsed);
-    assert.equal(tx4.logs.length, 2, "No burn Transfer event emitted!");
+    assert.equal(tx4.logs.length, 3, "No burn Transfer event emitted!");
 
     const gasUsedBN = new BN(tx4.receipt.gasUsed);
     const txRaw = await web3.eth.getTransaction(tx4.tx);
@@ -471,7 +479,7 @@ contract('EventFactory', (accounts) => {
     const tx5 = await cancelledTicketInstance.refundAll({from: nonOwner});
     console.log("    INFO: Gas used for refund all tickets: " + tx5.receipt.gasUsed);
 
-    assert.equal(tx5.logs.length, (numTicketsMinted - 1) * 2, "No burn Transfer events emitted!");
+    assert.equal(tx5.logs.length, (numTicketsMinted - 1) * 3, "No burn Transfer events emitted!");
 
     let checkBalance2 = await cancelledTicketInstance.balanceOf(nonOwner, {from: nonOwner});
     assert.equal(checkBalance2, 0);
@@ -508,20 +516,77 @@ contract('EventFactory', (accounts) => {
     const cancelledEventId = tx.logs[0].args.eventId.valueOf();
     const cancelledTicketStruct = [10, new BN("3000000000000000000"), currentTimestamp, currentTimestamp + 1000000, false];
 
-    const tx2 = await eventFactoryInstance.createTicket(cancelledEventId, uri, cancelledTicketStruct, {from: owner});
+    const tx2 = await eventFactoryInstance.createTicket(cancelledEventId, uri, uriHash, cancelledTicketStruct, {from: owner});
     assert.equal(tx2.logs.length, 1, "No TicketCreate event emitted!");
 
     const cancelledTicketAddress = tx2.logs[0].args.ticketAddress.valueOf();
     const cancelledTicketInstance = await Ticket.at(cancelledTicketAddress);
 
     const tx3 = await cancelledTicketInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: cancelledTicketStruct[1].muln(numTicketsMinted)});
-    assert.equal(tx3.logs.length, numTicketsMinted + 1, "No TicketMint event emitted!");
-    const cancelledTicketMintedIdStart = tx3.logs[numTicketsMinted].args.ticketStartId.valueOf();
+    assert.equal(tx3.logs.length, numTicketsMinted * 2, "No TicketMint event emitted!");
+    const cancelledTicketMintedIdStart = tx3.logs[numTicketsMinted].args.ticketId.valueOf();
 
     await truffleAssert.reverts(cancelledTicketInstance.refundTicket(cancelledTicketMintedIdStart, {from: nonOwner}));
     await truffleAssert.reverts(cancelledTicketInstance.refundAll({from: nonOwner}));
 
     await truffleAssert.reverts(eventFactoryInstance.cancelEvent(cancelledEventId, {from: nonOwner}));
+  });
+
+  it('if we set commission, ticket sale value must include it or else revert', async () => {
+    const eventFactoryInstance = await EventFactory.deployed();
+
+    const tx = await eventFactoryInstance.setCommissionRate(100, {from: owner})
+
+    assert.equal(tx.logs.length, 1, "No CommissionRateChange event emitted!");
+
+    const currentTimestamp = await getCurrentBlockTimestamp();
+
+    const testCommissionEventStruct = [
+      currentTimestamp, 
+      currentTimestamp + 10000];
+
+    const tx2 = await eventFactoryInstance.createEvent(testCommissionEventStruct, {from: owner});
+    assert.equal(tx2.logs.length, 1, "No EventCreate event emitted!");
+    
+    const commissionEventId = tx2.logs[0].args.eventId.valueOf();
+    
+    const commissionTicketStruct = [100, new BN("1000000000000000000"), currentTimestamp, currentTimestamp + 1000000, false];
+
+    const tx3 = await eventFactoryInstance.createTicket(commissionEventId, uri, uriHash, commissionTicketStruct, {from: owner});
+    assert.equal(tx3.logs.length, 1, "No TicketCreate event emitted!");
+
+    const commissionTicketAddress = tx3.logs[0].args.ticketAddress.valueOf();
+    const commissionTicketInstance = await Ticket.at(commissionTicketAddress);
+
+    const ticketCommission = (commissionTicketStruct[1].mul(new BN(100))).div(new BN(10000))
+    const ticketPriceWithCommission = commissionTicketStruct[1].add(ticketCommission)
+
+    const txMint = await commissionTicketInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: ticketPriceWithCommission.muln(numTicketsMinted)});
+
+    assert.equal(txMint.logs.length, numTicketsMinted * 2, "No TicketMint event emitted!");
+
+    await truffleAssert.reverts(commissionTicketInstance.mintTicket(numTicketsMinted, {from: nonOwner, value: commissionTicketStruct[1].mul(new BN(numTicketsMinted))}));
+
+    let factoryBalance = await web3.eth.getBalance(eventFactoryInstance.address);
+    let factoryBalanceBN = new BN(factoryBalance);
+
+    (ticketCommission.muln(numTicketsMinted)).should.be.a.bignumber.that.equals(factoryBalanceBN);
+
+    let ownerStartingBalance = await web3.eth.getBalance(owner);
+    const ownerStartingBalanceBN = new BN(ownerStartingBalance);
+
+    const txWithdraw = await eventFactoryInstance.withdrawCommissions({from: owner})
+
+    const gasUsedBN = new BN(txWithdraw.receipt.gasUsed);
+    const txRawWithdraw = await web3.eth.getTransaction(txWithdraw.tx);
+    const gasPriceBN = new BN(txRawWithdraw.gasPrice);
+    const transactionFee = gasPriceBN.mul(gasUsedBN);
+
+    let ownerEndingBalance = await web3.eth.getBalance(owner);
+    const ownerEndingBalanceBN = new BN(ownerEndingBalance);
+    const actualCommissionPaid = (ownerEndingBalanceBN.sub(ownerStartingBalanceBN)).add(transactionFee);
+
+    (factoryBalanceBN).should.be.a.bignumber.that.equals(actualCommissionPaid);
   });
   
 });

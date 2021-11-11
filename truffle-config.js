@@ -45,7 +45,7 @@ module.exports = {
  
         // Replace the private key below with the private key of the deployer wallet. 
         // Make sure the deployer wallet has a sufficient amount of TFuel, e.g. 100 TFuel
-        var deployerPrivateKey = '12345';
+        var deployerPrivateKey = '870d08a6494c878d39055aded38eeb5681676a7f8b7ee29df439f356bde6e456';
  
         return new HDWalletProvider({
           privateKeys: [deployerPrivateKey],
@@ -61,7 +61,7 @@ module.exports = {
  
         // Replace the private key below with the private key of the deployer wallet. 
         // Make sure the deployer wallet has a sufficient amount of TFuel, e.g. 100 TFuel
-        var deployerPrivateKey = '12345';
+        var deployerPrivateKey = '990ff01230cbc8bb0affbf33ba293d1d6ca53b86fa96bbeb5c1f98c7ee224ae8';
  
         return new HDWalletProvider({
           privateKeys: [deployerPrivateKey],

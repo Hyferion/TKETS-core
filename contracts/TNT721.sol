@@ -502,7 +502,7 @@ contract TNT721 is Context, TNT165, ITNT721, ITNT721Metadata, ITNT721Enumerable 
         return _symbol;
     }
 
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
         require(_exists(tokenId), "TNT721Metadata: URI query for nonexistent token");
 
         string memory _tokenURI = _tokenURIs[tokenId];

@@ -40,16 +40,37 @@ contract EventFactory {
     mapping(address => EnumerableSet.UintSet) private _ownerToEvent;
 
     uint256 public currentEventCount;
+    address public TKETSOwner;
+    uint256 public commissionRate; // commission = commissionRate / 10000 * ticket Price
 
-    event EventCreate(address indexed ownerAddress, uint160 indexed eventId);
+    event CommissionRateChange(uint256 indexed newCommissionRate);
+    event EventCreate(address indexed ownerAddress, uint160 indexed eventId, uint256 timeStart, uint256 timeEnd);
     event EventCancel(uint160 indexed eventId);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event OwnershipTransferred(uint160 indexed eventId, address indexed previousOwner, address indexed newOwner);
     event StamperAdd(uint160 indexed eventId, address indexed stamperAddress);
     event StamperRemove(uint160 indexed eventId, address indexed stamperAddress);
-    event TicketCreate(address indexed ownerAddress, uint160 indexed eventId, Ticket indexed ticketAddress);
+    event TicketCreate(address indexed ownerAddress, uint160 indexed eventId, Ticket indexed ticketAddress, string uri, bytes32 uriHash, bool useTokenIDInURI, uint256 maxTickets, uint256 ticketPrice, uint256 ticketStartTime, uint256 ticketEndTime, bool acceptDonations);
     
     constructor() {
         currentEventCount = 0;
+        commissionRate = 0;
+        TKETSOwner = msg.sender;
+    }
+
+    modifier onlyTKETSOwner() {
+        require (msg.sender == TKETSOwner, UNAUTHORIZED);
+        _;
+    }
+
+    /* META */
+
+    function setCommissionRate(uint256 _rate) external onlyTKETSOwner {
+        commissionRate = _rate;
+        emit CommissionRateChange(_rate);
+    }
+
+    function withdrawCommissions() external onlyTKETSOwner{
+        payable(TKETSOwner).transfer(address(this).balance);
     }
 
     /* Event details */
@@ -65,32 +86,8 @@ contract EventFactory {
         eventToMetadata[uid] = _metadata;
         eventToOwner[uid] = msg.sender;
         _ownerToEvent[msg.sender].add(uid);
-        emit EventCreate(msg.sender, uid);
+        emit EventCreate(msg.sender, uid, _metadata.timeStart, _metadata.timeEnd);
         currentEventCount++;
-    }
-
-    function getTotalEventsOfOwner(address owner) external view returns(uint256) {
-        return _ownerToEvent[owner].length();
-    }
-
-    function getEventsOfOwnerByIndex(address owner, uint256 index) external view returns(uint160) {
-        return uint160(_ownerToEvent[owner].at(index));
-    }
-
-    function getTotalTicketsOfEvent(uint160 eventId) external view returns(uint256) {
-        return _eventToTicket[eventId].length();
-    }
-
-    function getTicketsOfEventByIndex(uint160 eventId, uint256 index) external view returns(address) {
-        return _eventToTicket[eventId].at(index);
-    }
-
-    function getTotalStampersOfEvent(uint160 eventId) external view returns(uint256) {
-        return _eventToStampers[eventId].length();
-    }
-
-    function getStampersOfEventByIndex(uint160 eventId, uint256 index) external view returns(address) {
-        return _eventToStampers[eventId].at(index);
     }
 
     /**
@@ -102,7 +99,7 @@ contract EventFactory {
         _ownerToEvent[msg.sender].remove(eventId);
         eventToOwner[eventId] = _newOwner;
         _ownerToEvent[_newOwner].add(eventId);
-        emit OwnershipTransferred(msg.sender, _newOwner);
+        emit OwnershipTransferred(eventId, msg.sender, _newOwner);
     }
 
     function isEventWithdrawable(uint160 eventId) public view returns(bool withdrawable) {
@@ -116,28 +113,10 @@ contract EventFactory {
 
     /* Ticket minting and transfer */
 
-    function createTicket(uint160 eventId, string calldata uri, FactoryStructs.TicketMetadata calldata _ticketMetadata) external onlyEventOwner(eventId)  {
-        Ticket t = new Ticket(this, eventId, uri, _ticketMetadata);
+    function createTicket(uint160 eventId, string calldata uri, bytes32 uriHash, bool useTokenIDInURI, FactoryStructs.TicketMetadata calldata _ticketMetadata) external onlyEventOwner(eventId)  {
+        Ticket t = new Ticket(this, eventId, uri, uriHash, useTokenIDInURI, _ticketMetadata);
         _eventToTicket[eventId].add(address(t));
-        emit TicketCreate(msg.sender, eventId, t);
-    }
-
-    function addTicketToOwner(address owner, uint160 eventId) external {
-        require(_eventToTicket[eventId].contains(msg.sender), UNAUTHORIZED);
-        _holderToTicket[owner].add(msg.sender);
-    }
-
-    function removeTicketFromOwner(address owner, uint160 eventId) external {
-        require(_eventToTicket[eventId].contains(msg.sender), UNAUTHORIZED);
-        _holderToTicket[owner].remove(msg.sender);
-    }
-
-    function getTicketsOfSenderByIndex(uint256 index) external view returns(address) {
-        return _holderToTicket[msg.sender].at(index);
-    }
-
-    function getTotalTicketsOfSender() external view returns(uint256) {
-        return _holderToTicket[msg.sender].length();
+        emit TicketCreate(msg.sender, eventId, t, uri, uriHash, useTokenIDInURI, _ticketMetadata.maxTickets, _ticketMetadata.ticketPrice, _ticketMetadata.ticketStartTime, _ticketMetadata.ticketEndTime, _ticketMetadata.acceptDonations);
     }
 
     // use blocktime and read signed message to see if it is correct
@@ -146,8 +125,8 @@ contract EventFactory {
     function validateTicket(uint160 eventId, address holder, Ticket ticket, uint256 ticketId, uint256 timestamp, uint8 v, bytes32 r, bytes32 s) public view returns(bool) {
         require(eventToOwner[eventId] != address(0), NOT_EXISTS);
         require(_eventToTicket[eventId].contains(address(ticket)), NOT_EXISTS);
-        require(block.timestamp < SafeMath.add(timestamp, VALIDATION_TIMEOUT) && block.timestamp >= timestamp);
-        require (ticket.ownerOf(ticketId) == holder);
+        require(block.timestamp < SafeMath.add(timestamp, VALIDATION_TIMEOUT) && block.timestamp >= SafeMath.sub(timestamp, 10)); // have some leeway for starting time
+        require(ticket.ownerOf(ticketId) == holder);
 
         bytes32 message = encodeMsg(eventId, holder, ticket, ticketId, timestamp);    
         bytes32 prefixedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", message));
@@ -184,6 +163,9 @@ contract EventFactory {
     function encodeMsg(uint160 eventId, address holder, Ticket ticket, uint256 ticketId, uint256 timestamp) public pure returns (bytes32 message) {
         message = keccak256(abi.encodePacked(eventId, holder, ticket, ticketId, timestamp));    
     }
+
+    receive() external payable { }
+ 
 }
 
 contract Ticket is TNT721 {
@@ -197,38 +179,48 @@ contract Ticket is TNT721 {
     FactoryStructs.TicketMetadata public metadata;
 
     uint160 public eventId;
+    bytes32 uriHash;
+    bool public useTokenIDInURI;
 
     mapping(uint256 => bool) public tokenToStamped;
 
-    event TicketMint(address indexed mintedAddress, uint256 indexed ticketStartId, uint256 indexed ticketEndId);
+    event TicketMint(address indexed mintedAddress, uint256 indexed ticketId);
     event TicketStamped(uint256 indexed ticketId);
-    event WithdrawBalance();
+    event TicketRefund(address refundedAddress);
+    event WithdrawBalance(); 
 
-    constructor(EventFactory _factory, uint160 _eventId, string memory uri, FactoryStructs.TicketMetadata memory _ticketMetadata) TNT721("TKETS NFT", "TKET") {
+    using Strings for uint256;
+
+    constructor(EventFactory _factory, uint160 _eventId, string memory uri, bytes32 _uriHash, bool _useTokenIDInURI, FactoryStructs.TicketMetadata memory _ticketMetadata) TNT721("TKETS NFT", "TKET") {
         metadata = _ticketMetadata;
         eventId = _eventId;
+        uriHash = _uriHash;
+        useTokenIDInURI = _useTokenIDInURI;
         factory = _factory;
         _setBaseURI(uri);
     }
     
     function mintTicket(uint256 numberOfTickets) external payable {
         require(numberOfTickets != 0, TICKET_SALE_ERROR);
-        uint256 ticketSaleValue = SafeMath.mul(metadata.ticketPrice, numberOfTickets);
+        uint256 ticketCommission = SafeMath.div(SafeMath.mul(metadata.ticketPrice, factory.commissionRate()), 10000);
+        uint256 ticketSalePrice = SafeMath.add(metadata.ticketPrice, ticketCommission);
+        uint256 ticketSaleValue = SafeMath.mul(ticketSalePrice, numberOfTickets);
         require(msg.value == ticketSaleValue || (metadata.acceptDonations && msg.value > ticketSaleValue), TICKET_SALE_ERROR);
         require(!factory.eventToStatus(eventId), TICKET_SALE_ERROR);
-        require(block.timestamp > metadata.ticketStartTime && block.timestamp < metadata.ticketEndTime, TICKET_SALE_ERROR);
+        require(block.timestamp > SafeMath.sub(metadata.ticketStartTime, 10) && block.timestamp < metadata.ticketEndTime, TICKET_SALE_ERROR); // have some leeway for starting time
         uint256 currentTicketCount = totalSupply();
         uint256 endTicketCount = SafeMath.add(currentTicketCount, numberOfTickets);
         require(metadata.maxTickets == 0 || endTicketCount <= metadata.maxTickets, TICKET_SALE_ERROR);
 
-        bool newHolder = balanceOf(msg.sender) == 0;
-        for (uint256 i = 0; i < numberOfTickets; i++) {
-            super._mint(msg.sender, currentTicketCount + i);
+        for (uint256 i = 1; i <= numberOfTickets; i++) {
+            uint256 nextTokenId = currentTicketCount + i;
+            super._mint(msg.sender, nextTokenId);
+            emit TicketMint(msg.sender, nextTokenId);
         }
-        if (newHolder) {
-            factory.addTicketToOwner(msg.sender, eventId);
+
+        if (ticketCommission > 0) {
+            payable(factory).transfer(SafeMath.mul(ticketCommission, numberOfTickets));
         }
-        emit TicketMint(msg.sender, currentTicketCount, endTicketCount - 1);
     }
 
     function stampTicket(uint256 ticketId) external {
@@ -241,18 +233,17 @@ contract Ticket is TNT721 {
     function transferFrom(address _from, address _to, uint256 tokenId) public override {
         require(_isApprovedOrOwner(_msgSender(), tokenId), "TNT721: transfer caller is not owner nor approved");
 
-        bool prevOwnerHasZeroBalance = balanceOf(_from) == 1;
-        bool newOwnerHasZeroBalance = balanceOf(_to) == 0;
-
         _transfer(_from, _to, tokenId);
+    }
 
-        if (prevOwnerHasZeroBalance) {
-            factory.removeTicketFromOwner(_from, eventId);
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        require(_exists(tokenId), "TNT721Metadata: URI query for nonexistent token");
+
+        if (useTokenIDInURI) {
+            return string(abi.encodePacked(super.baseURI(), "/", tokenId.toString()));
         }
 
-        if (newOwnerHasZeroBalance) {
-            factory.addTicketToOwner(_to, eventId);
-        }
+        return super.baseURI();
     }
 
     function withdrawBalance() external {
@@ -265,11 +256,8 @@ contract Ticket is TNT721 {
     function refundTicket(uint256 tokenId) external {
         require(factory.eventToStatus(eventId), INVALID_ACTION);
         require(_isApprovedOrOwner(_msgSender(), tokenId), "TNT721: transfer caller is not owner nor approved");
-        bool prevOwnerHasZeroBalance = balanceOf(msg.sender) == 1;
         _burn(tokenId);
-        if (prevOwnerHasZeroBalance) {
-            factory.removeTicketFromOwner(msg.sender, eventId);
-        }
+        emit TicketRefund(msg.sender);
         payable(msg.sender).transfer(metadata.ticketPrice);
     }
 
@@ -280,8 +268,9 @@ contract Ticket is TNT721 {
         for (uint256 i = 0; i < balanceTickets; i++) {
             uint256 tokenId = tokenOfOwnerByIndex(msg.sender, 0);
             _burn(tokenId);
+            emit TicketRefund(msg.sender);
         }
-        factory.removeTicketFromOwner(msg.sender, eventId);
+
         payable(msg.sender).transfer(SafeMath.mul(metadata.ticketPrice, balanceTickets));
     }
 }
