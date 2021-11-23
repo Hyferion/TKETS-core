@@ -37,7 +37,6 @@ contract EventFactory {
     mapping(uint160 => address) public eventToOwner;
     mapping(uint160 => bool) public eventToStatus;
     mapping(uint160 => EnumerableSet.AddressSet) private _eventToStampers;
-    mapping(address => EnumerableSet.UintSet) private _ownerToEvent;
 
     uint256 public currentEventCount;
     address public TKETSOwner;
@@ -73,6 +72,10 @@ contract EventFactory {
         payable(TKETSOwner).transfer(address(this).balance);
     }
 
+    function transferTKETSOwnership(address newOwner) external onlyTKETSOwner{
+        TKETSOwner = newOwner;
+    }
+
     /* Event details */
 
     modifier onlyEventOwner(uint160 eventId) {
@@ -80,12 +83,19 @@ contract EventFactory {
         _;
     }
 
+    function forceCreateEvent(address eventOwner, FactoryStructs.EventMetadata calldata _metadata) external onlyTKETSOwner returns(uint160 uid) {
+        require (eventToOwner[uid] == address(0), INITIALIZATION_ERROR);
+        eventToMetadata[uid] = _metadata;
+        eventToOwner[uid] = eventOwner;
+        emit EventCreate(eventOwner, uid, _metadata.timeStart, _metadata.timeEnd);
+        currentEventCount++;
+    }
+
     function createEvent(FactoryStructs.EventMetadata calldata _metadata) external returns(uint160 uid) {
         uid = getUniqueId();
         require (eventToOwner[uid] == address(0), INITIALIZATION_ERROR);
         eventToMetadata[uid] = _metadata;
         eventToOwner[uid] = msg.sender;
-        _ownerToEvent[msg.sender].add(uid);
         emit EventCreate(msg.sender, uid, _metadata.timeStart, _metadata.timeEnd);
         currentEventCount++;
     }
@@ -96,9 +106,7 @@ contract EventFactory {
     */
     function transferOwnership(uint160 eventId, address _newOwner) external onlyEventOwner(eventId) {
         require(_newOwner != address(0), CANNOT_TRANSFER_TO_ZERO_ADDRESS);
-        _ownerToEvent[msg.sender].remove(eventId);
         eventToOwner[eventId] = _newOwner;
-        _ownerToEvent[_newOwner].add(eventId);
         emit OwnershipTransferred(eventId, msg.sender, _newOwner);
     }
 
@@ -117,6 +125,11 @@ contract EventFactory {
         Ticket t = new Ticket(this, eventId, uri, uriHash, useTokenIDInURI, _ticketMetadata);
         _eventToTicket[eventId].add(address(t));
         emit TicketCreate(msg.sender, eventId, t, uri, uriHash, useTokenIDInURI, _ticketMetadata.maxTickets, _ticketMetadata.ticketPrice, _ticketMetadata.ticketStartTime, _ticketMetadata.ticketEndTime, _ticketMetadata.acceptDonations);
+    }
+
+    function forceCreateTicketFromAddress(uint160 eventId, Ticket ticket, string calldata uri, bytes32 uriHash, bool useTokenIDInURI, FactoryStructs.TicketMetadata calldata _ticketMetadata) external onlyTKETSOwner  {
+        _eventToTicket[eventId].add(address(ticket));
+        emit TicketCreate(msg.sender, eventId, ticket, uri, uriHash, useTokenIDInURI, _ticketMetadata.maxTickets, _ticketMetadata.ticketPrice, _ticketMetadata.ticketStartTime, _ticketMetadata.ticketEndTime, _ticketMetadata.acceptDonations);
     }
 
     // use blocktime and read signed message to see if it is correct
