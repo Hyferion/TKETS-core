@@ -83,11 +83,12 @@ contract EventFactory {
         _;
     }
 
-    function forceCreateEvent(address eventOwner, FactoryStructs.EventMetadata calldata _metadata) external onlyTKETSOwner returns(uint160 uid) {
+    function forceCreateEvent(uint160 eventId, address eventOwner, FactoryStructs.EventMetadata calldata _metadata) external onlyTKETSOwner returns(uint160 uid) {
+        uid = eventId;
         require (eventToOwner[uid] == address(0), INITIALIZATION_ERROR);
         eventToMetadata[uid] = _metadata;
         eventToOwner[uid] = eventOwner;
-        emit EventCreate(eventOwner, uid, _metadata.timeStart, _metadata.timeEnd);
+        // emit EventCreate(eventOwner, uid, _metadata.timeStart, _metadata.timeEnd);
         currentEventCount++;
     }
 
@@ -127,9 +128,9 @@ contract EventFactory {
         emit TicketCreate(msg.sender, eventId, t, uri, uriHash, useTokenIDInURI, _ticketMetadata.maxTickets, _ticketMetadata.ticketPrice, _ticketMetadata.ticketStartTime, _ticketMetadata.ticketEndTime, _ticketMetadata.acceptDonations);
     }
 
-    function forceCreateTicketFromAddress(uint160 eventId, Ticket ticket, string calldata uri, bytes32 uriHash, bool useTokenIDInURI, FactoryStructs.TicketMetadata calldata _ticketMetadata) external onlyTKETSOwner  {
+    function forceCreateTicketFromAddress(uint160 eventId, Ticket ticket) external onlyTKETSOwner  {
         _eventToTicket[eventId].add(address(ticket));
-        emit TicketCreate(msg.sender, eventId, ticket, uri, uriHash, useTokenIDInURI, _ticketMetadata.maxTickets, _ticketMetadata.ticketPrice, _ticketMetadata.ticketStartTime, _ticketMetadata.ticketEndTime, _ticketMetadata.acceptDonations);
+        // emit TicketCreate(msg.sender, eventId, ticket, uri, uriHash, useTokenIDInURI, _ticketMetadata.maxTickets, _ticketMetadata.ticketPrice, _ticketMetadata.ticketStartTime, _ticketMetadata.ticketEndTime, _ticketMetadata.acceptDonations);
     }
 
     // use blocktime and read signed message to see if it is correct
